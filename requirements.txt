@@ -1,7 +1,9 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 streamlit
 python-dotenv
 groq
 sentence-transformers
+torch
 faiss-cpu
 pymupdf
 numpy

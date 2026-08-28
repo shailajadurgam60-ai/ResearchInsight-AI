@@ -14,6 +14,12 @@ from src.analytics import SessionAnalytics
 
 load_dotenv()
 
+
+@st.cache_resource(show_spinner="Loading embedding model...")
+def load_embedding_model():
+    return EmbeddingModel()
+
+
 st.set_page_config(
     page_title="ResearchInsight AI",
     page_icon="research",
@@ -45,13 +51,13 @@ with st.sidebar:
     )
 
     if uploaded_files and st.button("Process PDFs", type="primary"):
-        with st.spinner("Processing PDFs, please wait..."):
+        with st.status("Processing PDFs...", expanded=True) as status:
             try:
                 all_chunks = []
                 processed_files = []
 
                 for uploaded_file in uploaded_files:
-                    # Save to a temp file so fitz can open it
+                    st.write(f"Extracting text from **{uploaded_file.name}**...")
                     with tempfile.NamedTemporaryFile(
                         delete=False, suffix=".pdf"
                     ) as tmp:
@@ -61,21 +67,24 @@ with st.sidebar:
                     pages = extract_text_from_pdf(tmp_path)
                     os.unlink(tmp_path)
 
-                    # Restore original filename as source
                     for page in pages:
                         page["source"] = uploaded_file.name
 
+                    st.write(f"Chunking **{uploaded_file.name}** ({len(pages)} pages)...")
                     chunks = create_chunks(pages)
                     all_chunks.extend(chunks)
                     processed_files.append(
                         {"name": uploaded_file.name, "pages": len(pages), "chunks": len(chunks)}
                     )
 
-                # Build embedding model and index
-                embedding_model = EmbeddingModel()
+                st.write("Loading embedding model...")
+                embedding_model = load_embedding_model()
+
+                st.write(f"Generating embeddings for {len(all_chunks)} chunks...")
                 texts = [c["text"] for c in all_chunks]
                 embeddings = embedding_model.encode_texts(texts)
 
+                st.write("Building vector index...")
                 vector_store = VectorStore(dimension=embeddings.shape[1])
                 vector_store.add_embeddings(embeddings)
 
@@ -93,14 +102,17 @@ with st.sidebar:
                     "total_chunks": len(all_chunks)
                 }
 
-                st.success(
-                    f"Processed {len(processed_files)} file(s) — "
-                    f"{len(all_chunks)} chunks indexed."
+                status.update(
+                    label=f"Done — {len(processed_files)} file(s), {len(all_chunks)} chunks indexed.",
+                    state="complete",
+                    expanded=False,
                 )
 
             except ValueError as e:
+                status.update(label="Configuration error", state="error")
                 st.error(f"Configuration error: {e}")
             except Exception as e:
+                status.update(label="Processing failed", state="error")
                 st.error(f"Processing failed: {e}")
 
     # Show indexed document info
